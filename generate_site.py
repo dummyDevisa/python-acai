@@ -31,8 +31,7 @@ def generate_html():
     unique_bairros = df['Bairro'].nunique() if 'Bairro' in df.columns else 0
     unique_ceps = df['CEP'].nunique() if 'CEP' in df.columns else 0
 
-    # Chart Data (Graphs are lightweight JSON, keeping them is usually fine, but user asked for Report + Table primarily)
-    # I will keep the charts as they add value and are light (JS arrays).
+    # Chart Data
     if 'Bairro' in df.columns:
         bairros_counts = df[df['Bairro'] != '']['Bairro'].value_counts().head(10)
         chart_bairros_labels = bairros_counts.index.tolist()
@@ -41,11 +40,8 @@ def generate_html():
         chart_bairros_labels = []
         chart_bairros_data = []
 
-    # --- JSON Table Data (Crucial for performance with large datasets) ---
-    # We strip down columns to what is essential to reduce JSON size
+    # --- JSON Table Data ---
     cols_to_keep = []
-    
-    # Priority columns
     potential_cols = [
         'Nome do ponto de venda ou do proprietário', 
         'Telefone de contato', 
@@ -55,24 +51,13 @@ def generate_html():
         'Município',
         'CEP'
     ]
-    
     for c in potential_cols:
         if c in df.columns:
             cols_to_keep.append(c)
-    
-    # Ensure we have something
     if not cols_to_keep:
         cols_to_keep = df.columns[:5].tolist()
 
-    # Limit rows? The user has ~1700, passing 1700 rows in JSON is usually fine (<1MB).
-    # If file size is massive, maybe truncate text?
-    
-    table_df = df[cols_to_keep].copy()
-    
-    # Truncate long text to save bytes? Not strictly necessary for 1700 rows, but good practice if description is huge.
-    # Here fields are short addresses.
-    
-    table_data_json = table_df.to_dict(orient='records')
+    table_data_json = df[cols_to_keep].to_dict(orient='records')
     columns_json = json.dumps([{"data": c, "title": c} for c in cols_to_keep])
 
     # 3. Build HTML
@@ -96,22 +81,30 @@ def generate_html():
             background-color: #f8f9fa;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             color: #333;
+            overflow-x: hidden;
         }}
+        
+        /* Main Container Limit */
+        .main-wrapper {{
+            max-width: 1100px;
+            margin: 0 auto;
+        }}
+
         .report-header {{
             background: white;
             padding: 40px 20px;
             margin-bottom: 30px;
             border-bottom: 4px solid #6f42c1;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }}
+        
         .report-container {{
-            max_width: 1200px;
-            margin: 0 auto;
             padding: 0 15px;
         }}
+        
         .markdown-body {{
-            max_width: 900px;
-            margin: 0 auto;
             line-height: 1.6;
+            color: #2c3e50;
         }}
         .markdown-body h1, .markdown-body h2 {{ color: #2c3e50; }}
         
@@ -167,7 +160,7 @@ def generate_html():
 
     <!-- Report Text -->
     <div class="report-header">
-        <div class="report-container">
+        <div class="main-wrapper report-container">
              <div class="markdown-body">
                 {html_content}
              </div>
@@ -175,7 +168,7 @@ def generate_html():
     </div>
 
     <!-- Dashboard & Data -->
-    <div class="report-container">
+    <div class="main-wrapper report-container">
         
         <!-- KPIs -->
         <div class="row">
@@ -251,6 +244,7 @@ def generate_html():
                 language: {{ "url": "//cdn.datatables.net/plug-ins/1.13.4/i18n/pt-BR.json" }},
                 pageLength: 25,
                 scrollX: true,
+                deferRender: true,
                 dom: 'Bfrtip',
                 buttons: [
                     {{ extend: 'excel', text: 'Exportar Excel', className: 'btn btn-success btn-sm' }}
@@ -285,7 +279,7 @@ def generate_html():
     with open(OUTPUT_HTML, 'w', encoding='utf-8') as f:
         f.write(full_html)
     
-    print(f"Successfully generated {OUTPUT_HTML} (Lightweight Version).")
+    print(f"Successfully generated {OUTPUT_HTML} (Centered & Limited).")
 
 if __name__ == "__main__":
     generate_html()
