@@ -24,18 +24,18 @@ def generate_html():
         print(f"Error: {EXCEL_FILE} not found.")
         return
 
-    df = pd.read_excel(EXCEL_FILE)
+    # Read Excel and fill NaN to avoid JSON errors
+    df = pd.read_excel(EXCEL_FILE).fillna('')
     
-    # --- Analytics ---
+    # --- Prepare Data for Charts ---
     total_records = len(df)
     unique_bairros = df['Bairro'].nunique() if 'Bairro' in df.columns else 0
-    unique_ceps = df['CEP'].nunique() if 'CEP' in df.columns else 0
+    unique_ceps = df['CEP'].nunique() if 'CEP' in df.columns else 0 # Fixed variable name usage in previous script
 
     # Chart Data
     if 'Bairro' in df.columns:
-        bairros_counts = df['Bairro'].value_counts().head(15)
-        # Drop None/NaN if present in index
-        bairros_counts = bairros_counts[bairros_counts.index.notnull()]
+        # Filter out empty strings if any
+        bairros_counts = df[df['Bairro'] != '']['Bairro'].value_counts().head(15)
         chart_bairros_labels = bairros_counts.index.tolist()
         chart_bairros_data = bairros_counts.values.tolist()
     else:
@@ -46,15 +46,55 @@ def generate_html():
     quality_data = []
     for col in ['Logradouro', 'Bairro', 'Número', 'CEP']:
         if col in df.columns:
-            count = df[col].notnull().sum()
+            # Count non-empty strings
+            count = df[df[col] != ''].shape[0]
             quality_data.append(int(count))
         else:
             quality_data.append(0)
 
-    # Convert to HTML Table
-    table_html = df.to_html(classes="table table-striped table-hover", index=False, border=0, table_id="dataTable")
+    # --- Optimize Table Data Handover ---
+    # Instead of generating huge HTML string, we pass JSON to DataTable (Client-side rendering)
+    # Select columns to display. Let's keep it informative but not overwhelming.
+    # User likely wants: Nome (N), Telefone, Endereço Tratado (Logradouro, Numero, Bairro, Municipio)
+    
+    # We need to map dataframe columns to list of dicts
+    # Let's inspect columns to handle them dynamically or fixed?
+    # Fixed is safer for DataTables definition.
+    
+    # Expected columns based on previous steps:
+    # 'Nome do ponto...', 'Telefone...', 'Logradouro', 'Número', 'Bairro', 'Município'
+    # Let's try to find them loosely
+    
+    cols_to_keep = []
+    # Find Name
+    name_col = next((c for c in df.columns if 'Nome do ponto' in c), None)
+    phone_col = next((c for c in df.columns if 'Telefone' in c), None)
+    
+    if name_col: cols_to_keep.append(name_col)
+    if phone_col: cols_to_keep.append(phone_col)
+    
+    # Address parts
+    addr_cols = ['Logradouro', 'Número', 'Bairro', 'Município', 'CEP']
+    for c in addr_cols:
+        if c in df.columns:
+            cols_to_keep.append(c)
+            
+    # Fallback if specific columns missing, just take first 10
+    if not cols_to_keep:
+        cols_to_keep = df.columns[:8].tolist()
+        
+    # Create the lightweight subset for JSON
+    table_df = df[cols_to_keep]
+    table_data_json = table_df.to_dict(orient='records')
+    
+    # Prepare Table Headers HTML
+    thead_html = "<thead><tr>" + "".join([f"<th>{c}</th>" for c in cols_to_keep]) + "</tr></thead>"
+    # JS Column definition
+    columns_json = json.dumps([{"data": c, "title": c} for c in cols_to_keep])
 
     # 3. Build Full HTML
+    # We remove {table_html} injection and use empty table with ID
+    
     full_html = f"""
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -102,35 +142,13 @@ def generate_html():
             overflow: hidden;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             position: relative;
+            background: #e9ecef; /* Placeholder color before load */
         }}
         #map {{
-            height: 600px; /* Good height for desktop */
+            height: 500px; 
             width: 100%;
         }}
-        @media (max-width: 768px) {{
-             #map {{ height: 450px; }}
-        }}
         
-        /* Custom Map Popup */
-        .custom-popup .leaflet-popup-content-wrapper {{
-            border-radius: 8px;
-            padding: 5px;
-        }}
-        .custom-popup .leaflet-popup-content {{
-            margin: 10px;
-            line-height: 1.5;
-        }}
-        .popup-title {{
-            font-weight: bold;
-            font-size: 1.1em;
-            margin-bottom: 5px;
-            color: #333;
-        }}
-        .popup-info {{
-            margin-bottom: 3px;
-        }}
-
-        /* Dashboard Cards */
         .kpi-card {{
             background: white;
             border-radius: 8px;
@@ -139,13 +157,9 @@ def generate_html():
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             height: 100%;
             border-left: 5px solid #6f42c1;
-            transition: transform 0.2s;
-        }}
-        .kpi-card:hover {{
-            transform: translateY(-5px);
         }}
         .kpi-value {{
-            font-size: 2.5em;
+            font-size: 2.2em;
             font-weight: bold;
             color: #6f42c1;
         }}
@@ -153,7 +167,7 @@ def generate_html():
             color: #6c757d;
             font-weight: 500;
             text-transform: uppercase;
-            font-size: 0.85em;
+            font-size: 0.8em;
         }}
         
         .chart-container {{
@@ -164,26 +178,14 @@ def generate_html():
             margin-bottom: 20px;
         }}
 
-        /* Table Styling */
         .table-responsive {{
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            min-height: 400px;
         }}
-        #dataTable th {{
-            background-color: #6f42c1;
-            color: white;
-            border-bottom: none;
-        }}
-        #dataTable th, #dataTable td {{
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 180px; 
-            vertical-align: middle;
-        }}
-
+        
         footer {{
             text-align: center;
             margin-top: 50px;
@@ -191,11 +193,14 @@ def generate_html():
             color: #6c757d;
             font-size: 0.9em;
         }}
+
+        /* Custom Popup */
+        .popup-title {{ font-weight: bold; color: #333; }}
+        .leaflet-popup-content {{ font-size: 0.9em; }}
     </style>
 </head>
 <body>
 
-    <!-- Header / Report Section -->
     <div class="report-header">
         <div class="report-container">
              <div class="markdown-body">
@@ -204,74 +209,70 @@ def generate_html():
         </div>
     </div>
 
-    <!-- Main Content -->
     <div class="report-container">
         
         <!-- KPIs -->
         <div class="row mb-4 g-3">
-            <div class="col-md-4">
+            <div class="col-6 col-md-4">
                 <div class="kpi-card">
                     <div class="kpi-value">{total_records}</div>
-                    <div class="kpi-label">Pontos Mapeados</div>
+                    <div class="kpi-label">Pontos</div>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-6 col-md-4">
                 <div class="kpi-card">
                     <div class="kpi-value">{unique_bairros}</div>
-                    <div class="kpi-label">Bairros Atendidos</div>
+                    <div class="kpi-label">Bairros</div>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-12 col-md-4">
                 <div class="kpi-card">
-                    <div class="kpi-value">{int((unique_bairros/71)*100)}%</div> <!-- Belém has approx 71 neighborhoods -->
-                    <div class="kpi-label">Cobertura Estimada (Bairros)</div>
+                    <div class="kpi-value">{unique_ceps}</div>
+                    <div class="kpi-label">CEPs</div>
                 </div>
             </div>
         </div>
 
-        <!-- Geographic Map Section -->
+        <!-- Map Section -->
         <div id="map-container">
-            <h4 class="p-3 bg-white m-0 border-bottom">Mapa de Dispersão Espacial</h4>
             <div id="map"></div>
         </div>
 
-        <!-- Charts Row -->
+        <!-- Charts -->
         <div class="row mb-2">
-            <!-- Chart 1: Top Bairros -->
             <div class="col-lg-8">
                 <div class="chart-container">
-                    <h5 class="text-center mb-3">Top 15 Bairros com Mais Pontos</h5>
-                    <canvas id="chartBairros" height="300"></canvas>
+                    <h5 class="text-center mb-3">Top Bairros</h5>
+                    <canvas id="chartBairros" height="250"></canvas>
                 </div>
             </div>
-             <!-- Chart 2: Data Quality -->
             <div class="col-lg-4">
                 <div class="chart-container">
-                    <h5 class="text-center mb-3">Qualidade dos Endereços</h5>
-                    <div style="position: relative; height: 300px;">
+                    <h5 class="text-center mb-3">Qualidade</h5>
+                    <div style="position: relative; height: 250px;">
                         <canvas id="chartQuality"></canvas>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Data Table -->
+        <!-- Optimized Data Table -->
         <div class="table-responsive">
-            <h3 class="mb-4">Base de Dados Detalhada</h3>
-            {table_html}
+            <h3 class="mb-4">Base de Dados</h3>
+            <table id="dataTable" class="table table-striped table-hover" style="width:100%">
+                {thead_html}
+            </table>
         </div>
     </div>
 
     <footer>
-        <p>Gerado via Python - Projeto Açaí no Ponto &copy; 2025</p>
+        <p>Projeto Açaí no Ponto - GDOC/VISA</p>
     </footer>
 
     <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
-    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     
     <!-- DataTables -->
@@ -282,175 +283,151 @@ def generate_html():
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
     
-    <!-- Load Map Data -->
+    <!-- Map Data -->
     <script src="data.js"></script>
 
     <script>
-        // --- CHARTS LOGIC ---
+        // --- 1. OPTIMIZED TABLE RENDER ---
+        // Pass data as JSON object instead of raw HTML rows
+        const tableData = {json.dumps(table_data_json)};
+        const tableCols = {columns_json};
+
+        $(document).ready(function () {{
+            // Defer rendering slightly to allow UI to paint
+            setTimeout(function() {{
+                $('#dataTable').DataTable({{
+                    data: tableData,
+                    columns: tableCols,
+                    language: {{ "url": "//cdn.datatables.net/plug-ins/1.13.4/i18n/pt-BR.json" }},
+                    pageLength: 10,
+                    lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "Todos"]],
+                    scrollX: true,
+                    deferRender: true, // Critical for performance
+                    dom: 'Bfrtip',
+                    buttons: [
+                         {{
+                            extend: 'excelHtml5',
+                            text: '📥 Excel',
+                            className: 'btn btn-success btn-sm',
+                            title: 'Acai_Dados'
+                        }}
+                    ]
+                }});
+            }}, 50);
+        }});
+
+        // --- 2. CHARTS ---
         const bairrosLabels = {json.dumps(chart_bairros_labels)};
         const bairrosData = {json.dumps(chart_bairros_data)};
         const qualityLabels = {json.dumps(quality_labels)};
         const qualityData = {json.dumps(quality_data)};
 
-        // Bairros
-        const ctxBairros = document.getElementById('chartBairros').getContext('2d');
-        new Chart(ctxBairros, {{
-            type: 'bar',
-            data: {{
-                labels: bairrosLabels,
-                datasets: [{{
-                    label: 'Pontos de Venda',
-                    data: bairrosData,
-                    backgroundColor: 'rgba(111, 66, 193, 0.7)',
-                    borderColor: 'rgba(111, 66, 193, 1)',
-                    borderWidth: 1
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false,
-                indexAxis: 'y',
-                scales: {{ x: {{ beginAtZero: true }} }},
-                plugins: {{ legend: {{ display: false }} }}
-            }}
-        }});
-
-        // Quality
-        const ctxQuality = document.getElementById('chartQuality').getContext('2d');
-        new Chart(ctxQuality, {{
-            type: 'polarArea',
-            data: {{
-                labels: qualityLabels,
-                datasets: [{{
-                    data: qualityData,
-                    backgroundColor: [
-                        'rgba(75, 192, 192, 0.6)',
-                        'rgba(54, 162, 235, 0.6)',
-                        'rgba(255, 205, 86, 0.6)',
-                        'rgba(255, 99, 132, 0.6)'
-                    ]
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {{
-                    legend: {{ position: 'bottom' }}
+        if(document.getElementById('chartBairros')) {{
+            new Chart(document.getElementById('chartBairros'), {{
+                type: 'bar',
+                data: {{
+                    labels: bairrosLabels,
+                    datasets: [{{
+                        label: 'Qtd',
+                        data: bairrosData,
+                        backgroundColor: '#6f42c1',
+                        barThickness: 15
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {{ legend: {{ display: false }} }}
                 }}
-            }}
-        }});
-        
-        // --- DATA TABLE LOGIC ---
-        $(document).ready(function () {{
-            $('#dataTable').DataTable({{
-                "language": {{ "url": "//cdn.datatables.net/plug-ins/1.13.4/i18n/pt-BR.json" }},
-                "pageLength": 10,
-                "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "Todos"]],
-                "scrollX": true,
-                "dom": 'Bfrtip',
-                "buttons": [
-                    {{
-                        extend: 'excelHtml5',
-                        text: '📥 Exportar Excel',
-                        className: 'btn btn-success btn-sm',
-                        title: 'Relatorio_Acai_Enderecos'
-                    }}
-                ]
             }});
-        }});
-
-        // --- MAP LOGIC (Copied from User's Implementation) ---
-        // Initialize Map
-        const map = L.map('map').setView([-1.455, -48.49], 12);
-        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-            maxZoom: 19,
-            attribution: '© OpenStreetMap contributors'
-        }}).addTo(map);
-
-        function getColor(d) {{
-            return d === 'DAENT' ? '#1f77b4' : 
-                   d === 'DAGUA' ? '#17becf' : 
-                   d === 'DASAC' ? '#ff7f0e' :
-                   d === 'DAICO' ? '#2ca02c' : 
-                   d === 'DABEL' ? '#d62728' : 
-                   d === 'DABEN' ? '#9467bd' :
-                   d === 'DAOUT' ? '#bcbd22' : 
-                   d === 'DAMOS' ? '#e377c2' : '#7f7f7f';
         }}
 
-        function createPopupContent(properties) {{
-            const district = properties["Qual o distrito de saúde?"] || "Não informado";
-            const color = getColor(district);
-            let content = `<div class="popup-title" style="color: ${{color}}">${{properties["Nome do ponto de venda ou do proprietário"] || "Ponto de Açaí"}}</div>`;
-            if (properties["Nome do profissional de saúde"]) content += `<div class="popup-info"><strong>Profissional:</strong> ${{properties["Nome do profissional de saúde"]}}</div>`;
-            if (properties["Telefone de contato"]) content += `<div class="popup-info"><strong>Telefone:</strong> ${{properties["Telefone de contato"]}}</div>`;
-            content += `<div class="popup-info"><strong>Distrito:</strong> ${{district}}</div>`;
-            if (properties["_submission_time"]) {{
-                const date = new Date(properties["_submission_time"]).toLocaleDateString('pt-BR');
-                content += `<div class="popup-info"><strong>Data:</strong> ${{date}}</div>`;
-            }}
-            return content;
+        if(document.getElementById('chartQuality')) {{
+            new Chart(document.getElementById('chartQuality'), {{
+                type: 'doughnut', /* Polar area is too heavy sometimes, Doughnut is cleaner */
+                data: {{
+                    labels: qualityLabels,
+                    datasets: [{{
+                        data: qualityData,
+                        backgroundColor: ['#28a745', '#17a2b8', '#ffc107', '#dc3545']
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{ legend: {{ position: 'right', labels: {{ boxWidth: 10 }} }} }}
+                }}
+            }});
         }}
 
-        // Render GeoJSON
-        if (window.mapData && Array.isArray(window.mapData)) {{
-            const districts = ['DAENT', 'DAGUA', 'DASAC', 'DAICO', 'DABEL', 'DABEN', 'DAOUT', 'DAMOS'];
-            const layers = {{}};
-
-            districts.forEach(d => {{ layers[d] = L.featureGroup().addTo(map); }});
-            layers['Outros'] = L.featureGroup().addTo(map);
-
-            window.mapData.forEach(featureCollection => {{
-                if (!featureCollection.features) return;
-                featureCollection.features.forEach(feature => {{
-                    if (!feature.geometry || !feature.geometry.coordinates) return;
-                    
-                    const district = feature.properties["Qual o distrito de saúde?"];
-                    const targetLayer = (districts.includes(district)) ? layers[district] : layers['Outros'];
-                    
-                    // Coordinates in GeoJSON are often [long, lat], but circleMarker expects [lat, long]??
-                    // Wait, Leaflet L.geoJSON handles projection. But L.circleMarker takes [lat, lng].
-                    // Logic from maps.html: const latlng = [feature.geometry.coordinates[1], feature.geometry.coordinates[0]];
-                    // Correct!
-                    const latlng = [feature.geometry.coordinates[1], feature.geometry.coordinates[0]];
-                    
-                    const marker = L.circleMarker(latlng, {{
-                        radius: 6, // Slightly smaller for report density
-                        fillColor: getColor(district), 
-                        color: "#fff",
-                        weight: 1, 
-                        opacity: 1, 
-                        fillOpacity: 0.8
-                    }});
-                    
-                    if (feature.properties) {{
-                        marker.bindPopup(createPopupContent(feature.properties), {{ className: 'custom-popup' }});
-                    }}
-                    marker.addTo(targetLayer);
-                }});
-            }});
-
-            // Legend / Layer Control
-            const overlays = {{}};
-            districts.forEach(d => {{
-                const color = getColor(d);
-                const label = `<i style="background: ${{color}}; width: 12px; height: 12px; display: inline-block; border-radius: 50%; margin-right: 5px; vertical-align: middle;"></i> ${{d}}`;
-                overlays[label] = layers[d];
-            }});
-            const colorOutros = getColor('Outros');
-            const labelOutros = `<i style="background: ${{colorOutros}}; width: 12px; height: 12px; display: inline-block; border-radius: 50%; margin-right: 5px; vertical-align: middle;"></i> Outros`;
-            overlays[labelOutros] = layers['Outros'];
-
-            L.control.layers(null, overlays, {{ collapsed: false, position: 'bottomright' }}).addTo(map);
-
-            // Fit Bounds
-            const allLayers = L.featureGroup(Object.values(layers));
-            if (allLayers.getLayers().length > 0) {{
-                // pad to avoid cutting off markers
-                map.fitBounds(allLayers.getBounds(), {{padding: [50, 50]}}); 
+        // --- 3. MAP LOGIC ---
+        // Load map only if container exists
+        if(document.getElementById('map')) {{
+            const map = L.map('map', {{ preferCanvas: true }}).setView([-1.455, -48.49], 12);
+            L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+                maxZoom: 18,
+                attribution: 'OpenStreetMap'
+            }}).addTo(map);
+            
+            // Color Logic
+            function getColor(d) {{
+                const colors = {{
+                    'DAENT': '#1f77b4', 'DAGUA': '#17becf', 'DASAC': '#ff7f0e',
+                    'DAICO': '#2ca02c', 'DABEL': '#d62728', 'DABEN': '#9467bd',
+                    'DAOUT': '#bcbd22', 'DAMOS': '#e377c2'
+                }};
+                return colors[d] || '#7f7f7f';
             }}
-        }} else {{
-            console.error("Dados do mapa não encontrados em window.mapData");
+
+            // Add Data with Clustering or simple Canvas markers
+            // We use simple iteration but ensure we don't block main thread too much if possible
+            if (window.mapData && Array.isArray(window.mapData)) {{
+                // Use a single FeatureGroup for performance or iterate
+                // For 1700 points, L.circleMarker (SVG) is okay, but Canvas is better.
+                // We set preferCanvas: true in map init above.
+                
+                // Let's create layer groups
+                 const districts = ['DAENT', 'DAGUA', 'DASAC', 'DAICO', 'DABEL', 'DABEN', 'DAOUT', 'DAMOS'];
+                 const layers = {{}};
+                 districts.forEach(d => layers[d] = L.layerGroup()); // Use LayerGroup, lighter than FeatureGroup
+                 layers['Outros'] = L.layerGroup();
+                 
+                 window.mapData.forEach(fc => {{
+                     if(!fc.features) return;
+                     fc.features.forEach(f => {{
+                         if(!f.geometry || !f.geometry.coordinates) return;
+                         const dist = f.properties["Qual o distrito de saúde?"];
+                         const group = (districts.includes(dist)) ? layers[dist] : layers['Outros'];
+                         
+                         const lat = f.geometry.coordinates[1];
+                         const lng = f.geometry.coordinates[0];
+                         
+                         // Create marker
+                         L.circleMarker([lat, lng], {{
+                             radius: 5,
+                             fillColor: getColor(dist),
+                             color: "#fff",
+                             weight: 0.5,
+                             opacity: 1,
+                             fillOpacity: 0.8,
+                             renderer: L.canvas() // Force canvas
+                         }})
+                         .bindPopup(`<b>${{f.properties["Nome do ponto de venda ou do proprietário"] || "Ponto"}}</b><br>${{f.properties["Nome do profissional de sa\u00fade"] || ""}}`)
+                         .addTo(group);
+                     }});
+                 }});
+                 
+                 // Add to map
+                 Object.values(layers).forEach(l => l.addTo(map));
+                 
+                 // Controls
+                 const overlays = {{}};
+                 districts.forEach(d => overlays[`<span style='color:${{getColor(d)}}'>■</span> ${{d}}`] = layers[d]);
+                 overlays[`<span style='color:${{getColor('Outros')}}'>■</span> Outros`] = layers['Outros'];
+                 
+                 L.control.layers(null, overlays, {{collapsed: true}}).addTo(map);
+            }}
         }}
     </script>
 </body>
@@ -460,7 +437,7 @@ def generate_html():
     with open(OUTPUT_HTML, 'w', encoding='utf-8') as f:
         f.write(full_html)
     
-    print(f"Successfully generated {OUTPUT_HTML} with Map + Analytics.")
+    print(f"Successfully generated Optimized {OUTPUT_HTML}")
 
 if __name__ == "__main__":
     generate_html()
