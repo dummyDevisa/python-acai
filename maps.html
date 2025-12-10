@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Açaí - Belém</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+
+        .custom-popup .leaflet-popup-content-wrapper {
+            border-radius: 8px;
+            padding: 5px;
+        }
+
+        .custom-popup .leaflet-popup-content {
+            margin: 10px;
+            line-height: 1.5;
+        }
+
+        .popup-title {
+            font-weight: bold;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .popup-info {
+            margin-bottom: 3px;
+        }
+
+        .copyright {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #333;
+            z-index: 1000;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div class="copyright">© Daniel Santos</div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="data.js"></script>
+    <script>
+        const map = L.map('map').setView([-1.455, -48.49], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        function getColor(d) {
+            return d === 'DAENT' ? '#1f77b4' : d === 'DAGUA' ? '#17becf' : d === 'DASAC' ? '#ff7f0e' :
+                d === 'DAICO' ? '#2ca02c' : d === 'DABEL' ? '#d62728' : d === 'DABEN' ? '#9467bd' :
+                    d === 'DAOUT' ? '#bcbd22' : d === 'DAMOS' ? '#e377c2' : '#7f7f7f';
+        }
+
+        function createPopupContent(properties) {
+            const district = properties["Qual o distrito de saúde?"] || "Não informado";
+            const color = getColor(district);
+            let content = `<div class="popup-title" style="color: ${color}">${properties["Nome do ponto de venda ou do proprietário"] || "Ponto de Açaí"}</div>`;
+            if (properties["Nome do profissional de saúde"]) content += `<div class="popup-info"><strong>Profissional:</strong> ${properties["Nome do profissional de saúde"]}</div>`;
+            if (properties["Telefone de contato"]) content += `<div class="popup-info"><strong>Telefone:</strong> ${properties["Telefone de contato"]}</div>`;
+            content += `<div class="popup-info"><strong>Distrito:</strong> ${district}</div>`;
+            if (properties["_submission_time"]) {
+                const date = new Date(properties["_submission_time"]).toLocaleDateString('pt-BR');
+                content += `<div class="popup-info"><strong>Data:</strong> ${date}</div>`;
+            }
+            return content;
+        }
+
+        if (window.mapData && Array.isArray(window.mapData)) {
+            const districts = ['DAENT', 'DAGUA', 'DASAC', 'DAICO', 'DABEL', 'DABEN', 'DAOUT', 'DAMOS'];
+            const layers = {};
+
+            districts.forEach(d => { layers[d] = L.featureGroup().addTo(map); });
+            layers['Outros'] = L.featureGroup().addTo(map);
+
+            window.mapData.forEach(featureCollection => {
+                if (!featureCollection.features) return;
+                featureCollection.features.forEach(feature => {
+                    if (!feature.geometry || !feature.geometry.coordinates) return;
+                    const district = feature.properties["Qual o distrito de saúde?"];
+                    const targetLayer = (districts.includes(district)) ? layers[district] : layers['Outros'];
+                    const latlng = [feature.geometry.coordinates[1], feature.geometry.coordinates[0]];
+                    const marker = L.circleMarker(latlng, {
+                        radius: 8, fillColor: getColor(district), color: "#fff",
+                        weight: 1, opacity: 1, fillOpacity: 0.8
+                    });
+                    if (feature.properties) {
+                        marker.bindPopup(createPopupContent(feature.properties), { className: 'custom-popup' });
+                    }
+                    marker.addTo(targetLayer);
+                });
+            });
+
+            const overlays = {};
+            districts.forEach(d => {
+                const color = getColor(d);
+                const label = `<i style="background: ${color}; width: 12px; height: 12px; display: inline-block; border-radius: 50%; margin-right: 5px; vertical-align: middle;"></i> ${d}`;
+                overlays[label] = layers[d];
+            });
+            const colorOutros = getColor('Outros');
+            const labelOutros = `<i style="background: ${colorOutros}; width: 12px; height: 12px; display: inline-block; border-radius: 50%; margin-right: 5px; vertical-align: middle;"></i> Outros`;
+            overlays[labelOutros] = layers['Outros'];
+
+            L.control.layers(null, overlays, { collapsed: false, position: 'bottomright' }).addTo(map);
+
+            const allLayers = L.featureGroup(Object.values(layers));
+            if (allLayers.getLayers().length > 0) {
+                map.fitBounds(allLayers.getBounds());
+            }
+        } else {
+            console.error("Dados do mapa não encontrados.");
+            alert("Erro ao carregar os dados do mapa.");
+        }
+    </script>
+</body>
+
+</html>
