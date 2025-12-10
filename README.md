@@ -1,64 +1,64 @@
-# Python Açaí - Geocoding Script
+# Projeto Açaí no Ponto - Georreferenciamento e Análise
 
-Script Python para geocodificação reversa de coordenadas geográficas usando a API do Google Maps.
+Este projeto contém ferramentas para processar, enriquecer e visualizar dados de localização de pontos de venda de açaí em Belém, originários do cadastro realizado por Agentes Comunitários de Saúde (ACSs) na iniciativa "Açaí no Ponto".
 
-## Pré-requisitos
+## Funcionalidades
 
-1.  **Python 3.x** instalado
-2.  **API Key do Google Maps** com a **Geocoding API** habilitada
-
-## Configuração
-
-1.  **Clone o repositório** e navegue até a pasta do projeto.
-
-2.  **Configure a API Key**:
-    ```bash
-    cp .env.example .env
-    ```
-    Abra o arquivo `.env` e substitua `your_api_key_here` pela sua chave da API do Google Maps:
-    ```env
-    GOOGLE_MAPS_API_KEY=AIzaSy...
-    ```
-
-3.  **Crie o ambiente virtual e instale as dependências**:
-    ```bash
-    python -m venv venv
-    # Windows:
-    .\venv\Scripts\activate
-    # Linux/Mac:
-    source venv/bin/activate
-    
-    pip install -r requirements.txt
-    ```
-
-## Executando o Script
-
-```bash
-python process_locations.py
-```
-
-### O que esperar
-- O script carrega o arquivo CSV com os dados de localização dos pontos de açaí.
-- Processa ~1700 registros com um delay de 0.1s entre requisições para respeitar limites da API.
-- **Saída**: `output_enderecos.xlsx` com uma nova coluna `Endereço_Google`.
+1.  **Geocodificação Reversa:** Converte coordenadas geográficas (Latitude/Longitude) em endereços completos usando a Google Maps API.
+2.  **Tratamento de Endereços:** "Limpa" e estrutura os endereços retornados pelo Google em colunas separadas (Logradouro, Número, Bairro, CEP, Município, Estado).
+3.  **Geração de Relatório Web:** Compila um relatório administrativo e a tabela de dados em uma página HTML interativa (com busca e paginação), pronta para publicação (GitHub Pages).
 
 ## Estrutura do Projeto
 
+*   `process_locations.py`: Script principal que consulta a API do Google.
+*   `parse_addresses.py`: Script que estrutura os endereços textuais em colunas.
+*   `generate_site.py`: Gera o arquivo `index.html` com o relatório e os dados.
+*   `Relatorio_Projeto_Acai.md`: O texto do relatório administrativo.
+*   `requirements.txt`: Dependências do Python.
+
+## Como Executar
+
+### 1. Configuração Inicial
+
+Certifique-se de ter o Python instalado.
+
+```bash
+# Crie e ative o ambiente virtual
+python -m venv venv
+.\venv\Scripts\Activate.ps1  # Windows PowerShell
+
+# Instale as dependências
+pip install -r requirements.txt
+
+# Configure a chave de API
+# Renomeie .env.example para .env e adicione sua GOOGLE_MAPS_API_KEY
 ```
-python-acai/
-├── .env.example          # Template para configuração da API Key
-├── .gitignore            # Arquivos ignorados pelo Git
-├── requirements.txt      # Dependências Python
-├── process_locations.py  # Script principal
-├── README.md             # Este arquivo
-└── *.csv                 # Arquivo de dados (não versionado)
+
+### 2. Executar o Processamento
+
+Siga a ordem dos scripts para gerar o resultado final:
+
+**Passo 1: Obter Endereços (Geocoding)**
+Lê o CSV original e consulta a API do Google.
+```bash
+python process_locations.py
 ```
+*Gera: `output_enderecos.xlsx`*
 
-## Troubleshooting
+**Passo 2: Tratar e Estruturar Dados**
+Separa o endereço completo em colunas (Rua, Bairro, CEP, etc).
+```bash
+python parse_addresses.py
+```
+*Gera: `output_enderecos_tratado.xlsx`*
 
-- **API Key Error**: Se aparecer "WARNING: Valid Google Maps API Key not found", verifique se renomeou `.env.example` para `.env` e adicionou sua chave.
-- **Rate Limit**: Se o script parar frequentemente, o limite da API pode ter sido atingido. Verifique suas cotas no Google Cloud Console.
+**Passo 3: Gerar Site/Relatório**
+Cria uma página HTML com o relatório e a tabela de dados.
+```bash
+python generate_site.py
+```
+*Gera: `index.html`*
 
-## Custos Estimados
+## Contexto
 
-Com o plano gratuito ($200 de crédito), processar ~1700 registros custa aproximadamente $8.50 (a $5/1000 requisições).
+Este trabalho foi desenvolvido para atender uma demanda da **Gerência da Casa do Açaí / Vigilância Sanitária de Belém**, visando transformar dados brutos de localização em informações úteis para fiscalização e integração futura com o sistema **Visabelem.net**.
